@@ -1,0 +1,21 @@
+# Environment secrets and local overrides
+.env
+.DS_Store
+
+# Compiled Python artifacts
+__pycache__/
+*.py[cod]
+
+# Local volumes and metadata (kept only via .gitkeep)
+_vol/minio/data/*
+!_vol/minio/data/.gitkeep
+_vol/minio/config/*
+!_vol/minio/config/.gitkeep
+
+# DuckDB catalog snapshots
+catalog.db
+
+# DuckLake metadata & data lake outputs
+ducklake/catalog.duckdb
+ducklake/data/*
+!ducklake/data/.gitkeep

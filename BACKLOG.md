@@ -12,21 +12,23 @@ The build strategy is **incremental**: start with infrastructure and persistence
 
 **Goal:** Provide a functioning local environment with object storage and a working catalog.
 
-### Feature 1.1 — Environment & Container Setup
+### Feature 1.1 — Environment & Container Setup ✅
 
 **Acceptance Criteria**
 
 * `docker-compose up` brings up MinIO and initializes a versioned bucket.
 * `.env` variables define credentials and endpoints.
 * `make up`/`make down` scripts function consistently on any laptop.
+* `make check` validates the bucket exists and versioning is enabled.
 
-### Feature 1.2 — DuckDB + DuckLake Initialization
+### Feature 1.2 — DuckDB + DuckLake Initialization ✅
 
 **Acceptance Criteria**
 
-* `make create_ducklake` creates schemas (`bronze`, `silver`, `gold`, `audit`).
-* Catalog (SQLite) connected successfully.
-* Seed dataset loaded into a DuckLake table.
+* `make create_ducklake` installs & loads the DuckLake extension, provisions lake storage, and creates schemas (`bronze`, `silver`, `gold`, `audit`) idempotently.
+* Catalog (SQLite) located at `catalog.db` connects to the DuckLake catalog.
+* Seed dataset is materialized as Parquet in the lake (e.g., `_vol/minio/data/lake/bronze/seed_demo/`) via DuckLake table creation.
+* `make create_ducklake` returns zero exit status and `make check_ducklake` verifies schemas and DuckLake-backed seed table exist with data.
 
 ---
 
@@ -184,4 +186,3 @@ The build strategy is **incremental**: start with infrastructure and persistence
 6. **Epic 6:** Quality, automation, and governance.
 
 Each epic delivers a usable increment—by Epic 2 you already have live data flowing through the system.
-
