@@ -59,7 +59,7 @@ def test_query_scalar_with_retry_eventually_succeeds(monkeypatch):
 def test_run_duckdb_with_retry_raises_after_attempts(monkeypatch):
     attempts = []
 
-    def fake_run(statements, duckdb_binary):
+    def fake_run(statements, duckdb_binary, **kwargs):
         attempts.append(1)
         raise IngestError("HTTP timeout")
 

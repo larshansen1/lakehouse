@@ -13,6 +13,7 @@ if __package__ is None or __package__ == "":
 from scripts.lib.ducklake_ingest import (
     IngestError,
     build_env_config,
+    ducklake_attach_statements,
     ensure_duckdb_binary,
     run_duckdb,
 )
@@ -46,16 +47,13 @@ def main(argv) -> int:
         f"SET s3_use_ssl={'true' if env_config.use_ssl else 'false'}",
         f"SET s3_access_key_id='{env_config.access_key}'",
         f"SET s3_secret_access_key='{env_config.secret_key}'",
-        "INSTALL ducklake",
-        "LOAD ducklake",
-        f"ATTACH '{env_config.metadata_path.as_posix()}' AS ducklake"
-        f" (TYPE DUCKLAKE, DATA_PATH '{env_config.data_path}', OVERRIDE_DATA_PATH true)",
+        *ducklake_attach_statements(env_config),
         f"SELECT DISTINCT file_path, file_size_bytes FROM ducklake_table_files('ducklake', '{args.schema}', '{args.table}')",
         "DETACH ducklake",
     ]
 
     try:
-        result = run_duckdb(sql, duckdb_binary=duckdb_binary)
+        result = run_duckdb(sql, duckdb_binary=duckdb_binary, env_config=env_config)
     except IngestError as exc:
         print(f"Validation failed: {exc}", file=sys.stderr)
         return 1

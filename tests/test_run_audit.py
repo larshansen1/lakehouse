@@ -13,8 +13,9 @@ class DummyEnv(EnvConfig):
             endpoint_host="localhost:9000",
             endpoint_url="http://localhost:9000",
             use_ssl=False,
-            metadata_path=run_audit.Path("/tmp/catalog.duckdb"),
             data_path="s3://lake/ducklake",
+            backend="duckdb",
+            metadata_path=run_audit.Path("/tmp/catalog.duckdb"),
         )
 
 
@@ -39,7 +40,7 @@ def test_run_audit_collects_counts(monkeypatch, capsys):
 
     inserted = {}
 
-    def fake_run_duckdb(statements, duckdb_binary):
+    def fake_run_duckdb(statements, duckdb_binary, **kwargs):
         inserted["statements"] = statements
         inserted["binary"] = duckdb_binary
 

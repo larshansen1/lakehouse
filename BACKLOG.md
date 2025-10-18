@@ -64,7 +64,7 @@ The build strategy is **incremental**: start with infrastructure and persistence
 * New tests exercise ingestion helpers beyond ECB parsing (e.g., JSON ingest path, retry logic).
 * Coverage report for the pipeline modules (`scripts.run_demo`, `scripts.run_transforms`, `scripts.run_audit`, `scripts.lib.load_utils`) shows ≥80 % branch coverage.
 
-### Maintenance M6 — Modularise Oversized Ingestion Scripts
+### Maintenance M6 — Modularise Oversized Ingestion Scripts ✅
 
 **Goal:** Improve maintainability by breaking up monolithic ingestion modules.
 
@@ -73,6 +73,27 @@ The build strategy is **incremental**: start with infrastructure and persistence
 * `scripts/ingest_ecb_rates.py` and other >200 line modules are refactored into composable helpers under `scripts/lib/`.
 * Unit coverage updated to reflect the refactor (existing tests still pass).
 * Developer documentation notes the new module boundaries for future contributions.
+
+### Maintenance M7 — Introduce Postgres DuckLake Backend ✅
+
+**Goal:** Support a Postgres-backed DuckLake catalog alongside the local DuckDB workflow.
+
+**Acceptance Criteria**
+
+* `docker-compose.yml` provisions a Postgres service on a configurable non-standard port (controlled via `.env`, avoiding clashes with local instances).
+* DuckLake bootstrap scripts can target Postgres by reading new environment toggles (fallback to DuckDB remains available).
+* README and operational docs describe how to switch between DuckDB and Postgres backends, including any cleanup needed for existing MinIO artifacts when switching.
+* No data migration is required, but the workflow documents the need to reset or archive existing DuckLake metadata/minio folders before using Postgres.
+
+### Maintenance M8 — Use In-Memory DuckDB Session for Postgres Backend ✅
+
+**Goal:** Avoid catalog.db locks when DuckLake is attached to Postgres.
+
+**Acceptance Criteria**
+
+* All DuckLake helper scripts open DuckDB with `:memory:` whenever `DUCKLAKE_BACKEND=postgres`.
+* Ingestion, transform, audit, and validation flows run concurrently with `make ducklake_shell` without locking errors.
+* README and operations docs explain the in-memory behaviour for the Postgres backend.
 
 ### Feature 1.1 — Environment & Container Setup ✅
 
@@ -182,7 +203,7 @@ The build strategy is **incremental**: start with infrastructure and persistence
 **Acceptance Criteria**
 
 * dbt project compiles and runs against DuckDB.
-* Bronze, silver, and gold folders contain model examples.
+* Bronze, silver, and gold folders demonstrate the NYC Yellow Taxi dataset flowing end-to-end (raw trip data in bronze, cleaned/enriched rides in silver, daily revenue/tip aggregates in gold).
 * Basic dbt tests (`not_null`, `unique`) pass.
 
 ### Feature 3.2 — Silver Model Standardization

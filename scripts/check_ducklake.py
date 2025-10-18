@@ -13,7 +13,7 @@ from scripts.lib.ducklake_ingest import (
     IngestError,
     build_env_config,
     build_s3_statements,
-    ducklake_attach_statement,
+    ducklake_attach_statements,
     ensure_duckdb_binary,
     extract_scalar,
     project_root,
@@ -33,24 +33,22 @@ def run_ducklake_query(query: str) -> int:
     statements = [
         "INSTALL httpfs",
         "LOAD httpfs",
+        *build_s3_statements(ENV_CONFIG),
+        *ducklake_attach_statements(ENV_CONFIG),
+        query,
+        "DETACH ducklake",
     ]
-    statements.extend(build_s3_statements(ENV_CONFIG))
-    statements.extend(
-        [
-            "INSTALL ducklake",
-            "LOAD ducklake",
-            ducklake_attach_statement(ENV_CONFIG),
-            query,
-            "DETACH ducklake",
-        ]
+    result = run_duckdb(
+        statements,
+        duckdb_binary=DUCKDB_BIN,
+        env_config=ENV_CONFIG,
     )
-    result = run_duckdb(statements, duckdb_binary=DUCKDB_BIN)
     return extract_scalar(result.stdout)
 
 
 def validate_catalog() -> None:
     """Verify DuckLake schemas and seed table exist with data."""
-    if not CATALOG_PATH.exists():
+    if ENV_CONFIG.backend != "postgres" and not CATALOG_PATH.exists():
         raise SystemExit("catalog.db not found. Run `make create_ducklake` first.")
 
     schema_list = ", ".join(f"'{name}'" for name in EXPECTED_SCHEMAS)

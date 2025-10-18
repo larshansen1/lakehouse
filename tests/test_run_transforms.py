@@ -15,8 +15,9 @@ class DummyEnv(EnvConfig):
             endpoint_host="localhost:9000",
             endpoint_url="http://localhost:9000",
             use_ssl=False,
-            metadata_path=run_transforms.Path("/tmp/catalog.duckdb"),
             data_path="s3://lake/ducklake",
+            backend="duckdb",
+            metadata_path=run_transforms.Path("/tmp/catalog.duckdb"),
         )
 
 
@@ -29,7 +30,7 @@ def test_run_transforms_executes_duckdb(monkeypatch):
     monkeypatch.setattr(run_transforms, "build_s3_statements", lambda _: ["SET test"])
     monkeypatch.setattr(run_transforms, "detect_relation_type", lambda **_: "VIEW")
 
-    def fake_run_duckdb(stmts, duckdb_binary):
+    def fake_run_duckdb(stmts, duckdb_binary, **kwargs):
         statements.append(stmts)
         statements.append([duckdb_binary])
 
