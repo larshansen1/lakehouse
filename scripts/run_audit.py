@@ -82,7 +82,7 @@ def insert_counts(
 ) -> None:
     """Persist collected counts into ducklake.audit.table_health."""
     timestamp_literal = escape_sql_literal(
-        dt.datetime.utcnow().replace(microsecond=0).isoformat(sep=" ")
+        dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(sep=" ")
     )
     values = ",\n        ".join(
         f"('{escape_sql_literal(schema)}', '{escape_sql_literal(name)}', {row_count}, "

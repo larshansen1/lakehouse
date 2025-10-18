@@ -54,7 +54,17 @@ The build strategy is **incremental**: start with infrastructure and persistence
 * Associated scripts (e.g., dbt project, audit runner) are present and referenced by CI.
 * Status checks in PR guidance map directly to available Make targets.
 
-### Maintenance M5 — Modularise Oversized Ingestion Scripts
+### Maintenance M5 — Expand Test Coverage for Pipelines ✅
+
+**Goal:** Provide automated safety nets before large refactors.
+
+**Acceptance Criteria**
+
+* Pytest suite covers the orchestration scripts (`run_demo.py`, `run_transforms.py`, `run_audit.py`) via offline fixtures.
+* New tests exercise ingestion helpers beyond ECB parsing (e.g., JSON ingest path, retry logic).
+* Coverage report for the pipeline modules (`scripts.run_demo`, `scripts.run_transforms`, `scripts.run_audit`, `scripts.lib.load_utils`) shows ≥80 % branch coverage.
+
+### Maintenance M6 — Modularise Oversized Ingestion Scripts
 
 **Goal:** Improve maintainability by breaking up monolithic ingestion modules.
 

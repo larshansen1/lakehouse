@@ -92,6 +92,16 @@ pre-commit run --all-files
 
 This executes `ruff` and `mypy` locally—the same checks that should gate CI.
 
+Generate a branch-coverage snapshot for the core pipeline modules:
+
+```sh
+pytest --cov=scripts.run_demo \
+       --cov=scripts.run_transforms \
+       --cov=scripts.run_audit \
+       --cov=scripts.lib.load_utils \
+       --cov-branch
+```
+
 ### Catalog Backups
 
 - `make backup_catalog` — copies `ducklake/catalog.duckdb`, the project `catalog.db`, and manifest CSVs to `s3://lake/ducklake/_catalog_backups/<timestamp>/`.
