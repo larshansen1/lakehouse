@@ -17,7 +17,7 @@ from scripts.lib.ducklake_ingest import (
     build_env_config,
     build_s3_statements,
     detect_relation_type,
-    ducklake_attach_statement,
+    ducklake_attach_statements,
     ensure_duckdb_binary,
     escape_sql_literal,
     query_scalar,
@@ -92,10 +92,8 @@ def insert_counts(
     statements = [
         "INSTALL httpfs",
         "LOAD httpfs",
-        "INSTALL ducklake",
-        "LOAD ducklake",
         *build_s3_statements(env_config),
-        ducklake_attach_statement(env_config),
+        *ducklake_attach_statements(env_config),
         "CREATE SCHEMA IF NOT EXISTS ducklake.audit",
         "CREATE TABLE IF NOT EXISTS ducklake.audit.table_health ("
         "schema_name VARCHAR, relation_name VARCHAR, row_count BIGINT, checked_at TIMESTAMP"
@@ -108,7 +106,7 @@ def insert_counts(
             f"{values}"
         )
     statements.append("DETACH ducklake")
-    run_duckdb(statements, duckdb_binary=duckdb_binary)
+    run_duckdb(statements, duckdb_binary=duckdb_binary, env_config=env_config)
 
 
 def main() -> int:

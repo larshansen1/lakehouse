@@ -28,8 +28,10 @@ class EnvConfig:
     endpoint_host: str
     endpoint_url: str
     use_ssl: bool
-    metadata_path: Path
     data_path: str
+    backend: str
+    metadata_path: Path | None = None
+    postgres_dsn: str | None = None
 
 
 def project_root() -> Path:
@@ -123,9 +125,54 @@ def build_env_config() -> EnvConfig:
     bucket = get_env_value("MINIO_BUCKET_NAME", required=True)
     endpoint_raw = get_env_value("MINIO_ENDPOINT", default="http://127.0.0.1:9000").rstrip("/")
     endpoint_host, use_ssl = normalize_endpoint(endpoint_raw)
-    metadata = resolve_path(get_env_value("DUCKLAKE_METADATA_PATH", default="ducklake/catalog.duckdb"))
     default_data_path = f"s3://{bucket}/ducklake"
     data_path = resolve_storage_path(get_env_value("DUCKLAKE_DATA_PATH", default=default_data_path))
+    backend = get_env_value("DUCKLAKE_BACKEND", default="duckdb").strip().lower()
+    if backend not in {"duckdb", "postgres"}:
+        raise IngestError("DUCKLAKE_BACKEND must be either 'duckdb' or 'postgres'.")
+
+    metadata_path: Path | None = None
+    postgres_dsn: str | None = None
+    parsed_data = urlparse(data_path)
+    data_bucket = parsed_data.netloc or parsed_data.path.lstrip("/").split("/", 1)[0]
+    if parsed_data.scheme == "s3" and data_bucket and data_bucket != bucket:
+        raise IngestError(
+            "DUCKLAKE_DATA_PATH points at bucket "
+            f"'{data_bucket}' but MINIO_BUCKET_NAME is '{bucket}'. "
+            "Update your .env so both values reference the same MinIO bucket, "
+            "or adjust DUCKLAKE_DATA_PATH to a valid location for DuckLake managed data."
+        )
+    if backend == "duckdb":
+        metadata_value = get_env_value("DUCKLAKE_METADATA_PATH", default="ducklake/catalog.duckdb")
+        metadata_path = resolve_path(metadata_value)
+    else:
+        pg_host = get_env_value("DUCKLAKE_PG_HOST", default="127.0.0.1").strip()
+        if not pg_host:
+            raise IngestError("DUCKLAKE_PG_HOST cannot be empty when using the Postgres backend.")
+        pg_port_raw = get_env_value("DUCKLAKE_PG_PORT", default="55432").strip()
+        try:
+            pg_port = int(pg_port_raw)
+        except ValueError as exc:
+            raise IngestError(f"DUCKLAKE_PG_PORT must be an integer (received '{pg_port_raw}').") from exc
+        pg_db = get_env_value("DUCKLAKE_PG_DB", default="ducklake").strip()
+        if not pg_db:
+            raise IngestError("DUCKLAKE_PG_DB cannot be empty when using the Postgres backend.")
+        pg_user = get_env_value("DUCKLAKE_PG_USER", default="ducklake").strip()
+        if not pg_user:
+            raise IngestError("DUCKLAKE_PG_USER cannot be empty when using the Postgres backend.")
+        pg_password = get_env_value("DUCKLAKE_PG_PASSWORD", default="").strip()
+        pg_sslmode = get_env_value("DUCKLAKE_PG_SSLMODE", default="disable").strip()
+        dsn_parts = [
+            f"host={pg_host}",
+            f"port={pg_port}",
+            f"dbname={pg_db}",
+            f"user={pg_user}",
+        ]
+        if pg_password:
+            dsn_parts.append(f"password={pg_password}")
+        if pg_sslmode:
+            dsn_parts.append(f"sslmode={pg_sslmode}")
+        postgres_dsn = " ".join(dsn_parts)
     return EnvConfig(
         access_key=access_key,
         secret_key=secret_key,
@@ -133,9 +180,21 @@ def build_env_config() -> EnvConfig:
         endpoint_host=endpoint_host,
         endpoint_url=endpoint_raw,
         use_ssl=use_ssl,
-        metadata_path=metadata,
         data_path=data_path,
+        backend=backend,
+        metadata_path=metadata_path,
+        postgres_dsn=postgres_dsn,
     )
+
+
+def duckdb_database_target(env_config: EnvConfig | None = None) -> str:
+    """Return the DuckDB database path/identifier to use for command execution."""
+    backend = env_config.backend if env_config is not None else get_env_value(
+        "DUCKLAKE_BACKEND", default="duckdb"
+    ).strip().lower()
+    if backend == "postgres":
+        return ":memory:"
+    return str(CATALOG_PATH)
 
 
 def ensure_duckdb_binary(explicit_path: str | None = None) -> str:
@@ -167,7 +226,15 @@ def build_s3_statements(env_config: EnvConfig) -> list[str]:
 
 def ducklake_attach_statement(env_config: EnvConfig) -> str:
     """Return the ATTACH statement needed for DuckLake."""
-    metadata = escape_sql_literal(env_config.metadata_path.as_posix())
+    if env_config.backend == "duckdb":
+        if env_config.metadata_path is None:
+            raise IngestError("DUCKLAKE_METADATA_PATH is required when DUCKLAKE_BACKEND=duckdb.")
+        metadata_value = env_config.metadata_path.as_posix()
+    else:
+        if not env_config.postgres_dsn:
+            raise IngestError("Postgres DSN missing; check DUCKLAKE_PG_* variables.")
+        metadata_value = env_config.postgres_dsn
+    metadata = escape_sql_literal(metadata_value)
     data_path = escape_sql_literal(env_config.data_path)
     return (
         f"ATTACH '{metadata}' AS ducklake "
@@ -175,12 +242,34 @@ def ducklake_attach_statement(env_config: EnvConfig) -> str:
     )
 
 
-def run_duckdb(statements: Iterable[str], *, duckdb_binary: str) -> subprocess.CompletedProcess[str]:
+def ducklake_attach_statements(env_config: EnvConfig) -> List[str]:
+    """Return the statements required to load DuckLake against the configured backend."""
+    statements: List[str] = []
+    if env_config.backend == "postgres":
+        statements.extend(["INSTALL postgres", "LOAD postgres"])
+    statements.extend(["INSTALL ducklake", "LOAD ducklake", ducklake_attach_statement(env_config)])
+    return statements
+
+
+def run_duckdb(
+    statements: Iterable[str],
+    *,
+    duckdb_binary: str,
+    env_config: EnvConfig | None = None,
+    database: str | Path | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Execute a sequence of SQL statements against catalog.db."""
     cleaned = [stmt.strip().rstrip(";") for stmt in statements if stmt and stmt.strip()]
     statement = ";\n".join(cleaned) + ";"
+    db_target: str
+    if database is not None:
+        db_target = str(database)
+    elif env_config is not None:
+        db_target = duckdb_database_target(env_config)
+    else:
+        db_target = duckdb_database_target()
     result = subprocess.run(
-        [duckdb_binary, str(CATALOG_PATH), "-c", statement],
+        [duckdb_binary, db_target, "-c", statement],
         cwd=PROJECT_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -207,11 +296,11 @@ def query_scalar(
         statements.extend(["INSTALL httpfs", "LOAD httpfs"])
         statements.extend(build_s3_statements(env_config))
     if attach_ducklake:
-        statements.extend(["INSTALL ducklake", "LOAD ducklake", ducklake_attach_statement(env_config)])
+        statements.extend(ducklake_attach_statements(env_config))
     statements.append(sql)
     if attach_ducklake:
         statements.append("DETACH ducklake")
-    result = run_duckdb(statements, duckdb_binary=duckdb_binary)
+    result = run_duckdb(statements, duckdb_binary=duckdb_binary, env_config=env_config)
     return extract_scalar(result.stdout)
 
 
@@ -255,11 +344,11 @@ def query_value(
         statements.extend(["INSTALL httpfs", "LOAD httpfs"])
         statements.extend(build_s3_statements(env_config))
     if attach_ducklake:
-        statements.extend(["INSTALL ducklake", "LOAD ducklake", ducklake_attach_statement(env_config)])
+        statements.extend(ducklake_attach_statements(env_config))
     statements.append(sql)
     if attach_ducklake:
         statements.append("DETACH ducklake")
-    result = run_duckdb(statements, duckdb_binary=duckdb_binary)
+    result = run_duckdb(statements, duckdb_binary=duckdb_binary, env_config=env_config)
     return extract_last_value(result.stdout)
 
 

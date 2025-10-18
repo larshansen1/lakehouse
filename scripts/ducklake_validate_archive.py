@@ -15,6 +15,7 @@ if __package__ is None or __package__ == "":
 from scripts.lib.ducklake_ingest import (
     IngestError,
     build_env_config,
+    ducklake_attach_statements,
     ensure_duckdb_binary,
     run_duckdb,
 )
@@ -42,15 +43,12 @@ def collect_objects(env_config, duckdb_binary: str) -> List[str]:
         f"SET s3_use_ssl={'true' if env_config.use_ssl else 'false'}",
         f"SET s3_access_key_id='{env_config.access_key}'",
         f"SET s3_secret_access_key='{env_config.secret_key}'",
-        "INSTALL ducklake",
-        "LOAD ducklake",
-        f"ATTACH '{env_config.metadata_path.as_posix()}' AS ducklake "
-        f"(TYPE DUCKLAKE, DATA_PATH '{env_config.data_path}', OVERRIDE_DATA_PATH true)",
+        *ducklake_attach_statements(env_config),
         "SELECT DISTINCT file_path FROM ducklake_table_info('ducklake') "
         "WHERE schema_name = 'bronze' AND table_name LIKE 'ecb_exchange_rates%'",
         "DETACH ducklake",
     ]
-    result = run_duckdb(sql, duckdb_binary=duckdb_binary)
+    result = run_duckdb(sql, duckdb_binary=duckdb_binary, env_config=env_config)
     paths: List[str] = []
     for line in result.stdout.splitlines():
         candidate = line.strip().strip("|").strip()
@@ -72,7 +70,7 @@ def check_object(path: str, env_config, duckdb_binary: str) -> Tuple[str, bool, 
         f"SELECT COUNT(*) FROM read_parquet('s3://{path}')",
     ]
     try:
-        run_duckdb(sql, duckdb_binary=duckdb_binary)
+        run_duckdb(sql, duckdb_binary=duckdb_binary, env_config=env_config)
         return path, True, ""
     except IngestError as exc:
         return path, False, str(exc)

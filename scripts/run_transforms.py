@@ -15,7 +15,7 @@ from scripts.lib.ducklake_ingest import (
     build_env_config,
     build_s3_statements,
     detect_relation_type,
-    ducklake_attach_statement,
+    ducklake_attach_statements,
     ensure_duckdb_binary,
     run_duckdb,
 )
@@ -53,10 +53,8 @@ def build_transform_statements(env_config: EnvConfig) -> list[str]:
     return [
         "INSTALL httpfs",
         "LOAD httpfs",
-        "INSTALL ducklake",
-        "LOAD ducklake",
         *build_s3_statements(env_config),
-        ducklake_attach_statement(env_config),
+        *ducklake_attach_statements(env_config),
         "CREATE SCHEMA IF NOT EXISTS ducklake.silver",
         "CREATE SCHEMA IF NOT EXISTS ducklake.gold",
         # Silver models
@@ -96,7 +94,7 @@ def main() -> int:
         duckdb_binary = ensure_duckdb_binary(None)
         validate_sources(env_config=env_config, duckdb_binary=duckdb_binary)
         statements = build_transform_statements(env_config)
-        run_duckdb(statements, duckdb_binary=duckdb_binary)
+        run_duckdb(statements, duckdb_binary=duckdb_binary, env_config=env_config)
     except IngestError as exc:
         print(f"Transforms failed: {exc}", file=sys.stderr)
         return 1

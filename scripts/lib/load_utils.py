@@ -104,6 +104,8 @@ def run_duckdb_with_retry(
     statements: Iterable[str],
     *,
     duckdb_binary: str,
+    env_config=None,
+    database=None,
     attempts: int = 3,
     delay_seconds: float = 1.0,
 ):
@@ -111,7 +113,12 @@ def run_duckdb_with_retry(
     last_exc: IngestError | None = None
     for attempt in range(1, max(1, attempts) + 1):
         try:
-            return run_duckdb(statements, duckdb_binary=duckdb_binary)
+            return run_duckdb(
+                statements,
+                duckdb_binary=duckdb_binary,
+                env_config=env_config,
+                database=database,
+            )
         except IngestError as exc:
             lower = str(exc).lower()
             if "http" not in lower or attempt >= attempts:

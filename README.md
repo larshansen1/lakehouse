@@ -2,13 +2,24 @@
 
 ## Local Environment Bootstrap
 
-1. Copy `.env.example` to `.env` and customize credentials (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_NAME`). Keep `DUCKLAKE_DATA_PATH` pointed at your MinIO bucket (e.g., `s3://lake/ducklake`) so managed tables live in object storage.
+1. Copy `.env.example` to `.env` and customize credentials (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_BUCKET_NAME`). Choose a catalog backend by setting `DUCKLAKE_BACKEND=duckdb` (default) or `DUCKLAKE_BACKEND=postgres`. When using Postgres, adjust the `DUCKLAKE_PG_*` variables (default port `55432`) and ensure they stay in sync with the Compose service. Keep `DUCKLAKE_DATA_PATH` pointed at the same bucket defined by `MINIO_BUCKET_NAME` (e.g., `s3://lake/ducklake`) so managed tables land in object storage without 404s.
 2. Start the stack with `make up`. This brings up MinIO, creates the bucket defined in `.env`, and enables object versioning.
 3. Visit the MinIO console at `http://localhost:9001` (default) to confirm the bucket status. S3 clients can connect via `http://localhost:9000`.
 4. Run `make check` to validate that the bucket exists and versioning is turned on.
 5. Execute `make bootstrap` to bring up MinIO (if not already), initialize DuckLake metadata, and load the seed dataset into `ducklake.bronze.seed_demo` as Parquet.
 6. Alternatively, run `make create_ducklake` followed by `make check_ducklake` when you need to refresh the catalog only.
 7. Tear down the environment with `make down` when finished.
+
+### Catalog Backends
+
+DuckLake supports both file-based (DuckDB) and Postgres-backed catalogs.
+
+- `duckdb` (default): metadata lives at `ducklake/catalog.duckdb`. This mode keeps everything on the local filesystem and works out of the box with the demo commands.
+- `postgres`: metadata is stored in the `postgres` service defined in `docker-compose.yml` (exposed on `${DUCKLAKE_PG_PORT:-55432}` to avoid clashing with a local Postgres). Configure the connection values in `.env` and re-run `make bootstrap` to initialise schemas.
+- Switching backends: stop the stack with `make down`, archive or delete the previous catalog (`ducklake/catalog.duckdb`) and MinIO lake data (`_vol/minio/data/ducklake/`) so the new backend starts clean, then bring the stack back up and run `make bootstrap`. Clearing `_vol/postgres/data/` is recommended when moving away from Postgres.
+- When the backend is Postgres, all helper scripts use an in-memory DuckDB session to avoid file locks; interactive shells spawned via `make ducklake_shell` now do the same, so you can ingest and query concurrently without closing the shell.
+- `make ducklake_shell` runs DuckDB in read-only mode when Postgres backs the catalog, preventing lock conflicts with background ingestion while still letting you inspect data.
+- See `docs/operations/catalog_backends.md` for a detailed checklist and troubleshooting tips.
 
 ### Persistence Layout
 
@@ -27,7 +38,9 @@ These paths map directly into the container, keeping the catalog and object stor
 
 ### Querying DuckLake Tables
 
-Each DuckDB session must load the DuckLake extension, configure MinIO credentials, and reattach the lake metadata before querying:
+Each DuckDB session must load the DuckLake extension, configure MinIO credentials, and reattach the lake metadata before querying. Use the snippet that matches your configured backend.
+
+DuckDB-backed catalog:
 
 ```sql
 INSTALL httpfs;
@@ -45,7 +58,29 @@ SELECT * FROM ducklake_snapshots('ducklake');
 DETACH ducklake;
 ```
 
-Adjust the credentials, endpoint, and paths if you override `MINIO_*`, `DUCKLAKE_METADATA_PATH`, or `DUCKLAKE_DATA_PATH` in your environment.
+Postgres-backed catalog:
+
+```sql
+INSTALL httpfs;
+LOAD httpfs;
+INSTALL postgres;
+LOAD postgres;
+SET s3_endpoint='127.0.0.1:9000';
+SET s3_url_style='path';
+SET s3_use_ssl=false;
+SET s3_access_key_id='ducklake';
+SET s3_secret_access_key='ducklake-insecure-change-me';
+INSTALL ducklake;
+LOAD ducklake;
+ATTACH 'host=127.0.0.1 port=55432 dbname=ducklake user=ducklake password=ducklake-insecure-change-me sslmode=disable'
+  AS ducklake (TYPE DUCKLAKE, DATA_PATH 's3://lake/ducklake');
+USE ducklake;
+SELECT * FROM bronze.seed_demo LIMIT 5;
+SELECT * FROM ducklake_snapshots('ducklake');
+DETACH ducklake;
+```
+
+Adjust the credentials, endpoint, and connection string if you override `MINIO_*`, `DUCKLAKE_METADATA_PATH`, `DUCKLAKE_DATA_PATH`, or `DUCKLAKE_PG_*`.
 
 ### Ingestion Commands
 
@@ -58,6 +93,8 @@ Adjust the credentials, endpoint, and paths if you override `MINIO_*`, `DUCKLAKE
 - `make demo` — orchestrate bootstrap, offline-friendly ingests, silver/gold transforms, and an audit pass (idempotent).
 - `make dbt_run` — surrogate for downstream transforms; materialises the silver/gold views used by analytics demos.
 - `make audit` — recomputes row-count telemetry and appends results to `ducklake.audit.table_health`.
+
+Implementation note: the ingestion scripts are thin CLI wrappers—shared logic now lives under `scripts/lib/` (`api_ingest.py`, `file_ingest.py`, and `ecb_rates_ingest.py`) so unit tests and future extensions can reuse the same building blocks.
 
 For deterministic runs, pass the optional flags directly to the ingest script:
 

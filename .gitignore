@@ -11,6 +11,8 @@ _vol/minio/data/*
 !_vol/minio/data/.gitkeep
 _vol/minio/config/*
 !_vol/minio/config/.gitkeep
+_vol/postgres/data/*
+!_vol/postgres/data/.gitkeep
 
 # DuckDB catalog snapshots
 catalog.db

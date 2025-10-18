@@ -56,6 +56,7 @@ This document provides practical guidelines for developing, testing, and deployi
 - Favor **functional, idempotent scripts** that read/write from S3 and avoid global state.
 - Keep Python modules under 200 lines; reuse logic under `scripts/lib/`.
 - For SQL, prefer readable, ANSI-compliant DuckDB syntax with lowercase identifiers and snake_case tables.
+- Before implementing new capabilities, ensure the work is represented in `BACKLOG.md` (create/update the relevant entry first).
 
 ### Linting & Quality
 - Run `ruff check` for Python linting.
@@ -163,5 +164,4 @@ This document provides practical guidelines for developing, testing, and deployi
 - [ ] `make demo` runs successfully.
 - [ ] Updated docs/contracts and `.env.example`.
 - [ ] Artifacts (audit, lineage) generated and verified.
-
 

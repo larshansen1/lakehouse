@@ -15,6 +15,20 @@ services:
       - ./_vol/minio/data:/data
       - ./_vol/minio/config:/root/.minio
 
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DUCKLAKE_PG_DB}
+      POSTGRES_USER: ${DUCKLAKE_PG_USER}
+      POSTGRES_PASSWORD: ${DUCKLAKE_PG_PASSWORD}
+    ports:
+      - "${DUCKLAKE_PG_PORT}:5432"
+    volumes:
+      - ./_vol/postgres/data:/var/lib/postgresql/data
+
   minio-init:
     image: minio/mc:latest
     depends_on:
