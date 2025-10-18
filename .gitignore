@@ -19,3 +19,6 @@ catalog.db
 ducklake/catalog.duckdb
 ducklake/data/*
 !ducklake/data/.gitkeep
+
+# Catalog backups
+backups/

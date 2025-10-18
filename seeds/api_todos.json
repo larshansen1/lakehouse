@@ -1,0 +1,20 @@
+[
+  {
+    "userId": 1,
+    "id": 1,
+    "title": "demo todo: configure lakehouse",
+    "completed": false
+  },
+  {
+    "userId": 2,
+    "id": 2,
+    "title": "demo todo: ingest api dataset",
+    "completed": true
+  },
+  {
+    "userId": 2,
+    "id": 3,
+    "title": "demo todo: review audit logs",
+    "completed": false
+  }
+]

@@ -12,6 +12,58 @@ The build strategy is **incremental**: start with infrastructure and persistence
 
 **Goal:** Provide a functioning local environment with object storage and a working catalog.
 
+## Maintenance Backlog
+
+### Maintenance M1 — Stabilize Python Test Harness ✅
+
+**Goal:** Ensure the automated test suite runs without manual environment tweaks.
+
+**Acceptance Criteria**
+
+* `pytest` executes from the project root without manual `PYTHONPATH` overrides or environment hacks.
+* Test discovery works under both local development and CI shells.
+* Documentation (`README` or contributing guide) updated with the canonical test command.
+
+### Maintenance M2 — Restore Linting and Type-Check Health ✅
+
+**Goal:** Reinstate the project’s static quality gates.
+
+**Acceptance Criteria**
+
+* `ruff check` runs cleanly with no outstanding warnings in the scripts package.
+* `mypy` passes for `scripts/` (fixing current signature/type errors).
+* CI/pre-commit configuration updated so lint/type checks run automatically.
+
+### Maintenance M3 — Enforce Schema-Aware Storage Prefixes (Cancelled)
+
+**Goal:** Align DuckLake storage layout with Feature 2.5 requirements.
+
+**Acceptance Criteria**
+
+* Bootstrap/ingest routines set `ducklake_set_option('storage.table_prefix', '<schema>/')` (or equivalent) before table creation.
+* Existing bronze tables are re-ingested or migrated so MinIO folders follow the `<schema>/<table>/` convention.
+* README and operations docs refreshed to explain the schema-prefixed layout and verification steps.
+
+### Maintenance M4 — Implement Required Build & Audit Targets ✅
+
+**Goal:** Provide the operational commands that AGENTS.md mandates.
+
+**Acceptance Criteria**
+
+* `make demo`, `make dbt_run`, and `make audit` targets exist and execute the expected end-to-end, transformation, and observability flows.
+* Associated scripts (e.g., dbt project, audit runner) are present and referenced by CI.
+* Status checks in PR guidance map directly to available Make targets.
+
+### Maintenance M5 — Modularise Oversized Ingestion Scripts
+
+**Goal:** Improve maintainability by breaking up monolithic ingestion modules.
+
+**Acceptance Criteria**
+
+* `scripts/ingest_ecb_rates.py` and other >200 line modules are refactored into composable helpers under `scripts/lib/`.
+* Unit coverage updated to reflect the refactor (existing tests still pass).
+* Developer documentation notes the new module boundaries for future contributions.
+
 ### Feature 1.1 — Environment & Container Setup ✅
 
 **Acceptance Criteria**
@@ -36,44 +88,78 @@ The build strategy is **incremental**: start with infrastructure and persistence
 
 **Goal:** Establish ingestion patterns via file and API; introduce a first real data source.
 
-### Feature 2.1 — File Landing & Bronze Tables
+### Feature 2.1 — File Landing & Bronze Tables ✅
 
 **Acceptance Criteria**
 
-* Upload local CSV/Parquet to `s3://lake/landing/...`.
-* Bronze tables built from raw data using DuckDB SQL.
-* Idempotent ingestion verified through repeated runs.
+* `make ingest_seed_demo` stages `seeds/demo_seed.csv` into MinIO at `s3://lake/landing/seed_demo/seed_demo.parquet` using credentials from `.env`.
+* Bronze table `ducklake.bronze.seed_demo` rebuilt from landing objects via a checked-in DuckDB SQL workflow (no manual console steps).
+* DuckLake managed storage (`DUCKLAKE_DATA_PATH`) points at the MinIO bucket so bronze tables materialize in `s3://lake/ducklake/...`.
+* Ingestion command is idempotent: reruns overwrite the landing object, refresh the bronze table, and report an unchanged row count.
+* Script emits a success summary (row counts + object path) so CI or tests can assert ingestion succeeded.
 
-### Feature 2.2 — API Source Integration
+### Feature 2.2 — API Source Integration ✅
 
 **Acceptance Criteria**
 
-* `scripts/ingest_api.py` fetches and converts sample JSON → Parquet.
+* `scripts/ingest_api.py` fetches and converts sample JSON → Parquet using the open endpoint `https://jsonplaceholder.typicode.com/todos`.
 * Output uploaded to `s3://lake/landing/api/...`.
-* Basic schema documented under `docs/contracts/source_api.md`.
+* Basic schema documented under `docs/contracts/source_api.md`, including the selected endpoint URL and refresh guidance.
 
 ### Feature 2.3 — Public Data Source (Example Integration)
 
 **Goal:** Demonstrate ingestion of an openly available dataset to validate full pipeline and provide realistic BI examples.
 
-**Proposed Dataset:** [European Central Bank (ECB) Exchange Rates API](https://data.ecb.europa.eu/data/exchange-rates) or [NOAA Global Surface Summary of the Day (GSOD)](https://www.ncei.noaa.gov/products/land-based-station/global-summary-day).
+**Selected Dataset:** [European Central Bank (ECB) Euro Foreign Exchange Reference Rates](https://data.ecb.europa.eu/explorer/api).
+
+**Rationale**
+
+* Public, stable JSON/CSV API with predictable structure and daily availability.
+* Lightweight footprint (≤10 KB/day) yet realistic enough to showcase time-series modelling.
+* Aligns with eventual gold-layer analytics such as FX conversions and trend monitoring.
 
 **Acceptance Criteria**
 
-* Daily exchange rates or weather data fetched using Python ingest script.
-* Data stored as Parquet under `s3://lake/landing/public/ecb_exchange_rates/` or equivalent.
-* Corresponding bronze/silver/gold models created:
+* Add a dedicated CLI (`scripts/ingest_ecb_rates.py` or an `ingest_api.py` mode) and `make ingest_ecb_rates` target that retrieves the ECB reference rates for a requested business date (default: latest published) and writes them to `s3://lake/landing/public/ecb_exchange_rates/load_date=<date>/batch_id=<batch>/rates.parquet`.
+* Bronze table `ducklake.bronze.ecb_exchange_rates_archive` (append-only) captures `load_date`, `load_batch`, `rate_date`, `currency_code`, `currency_name`, and `fx_rate` columns. A `ducklake.bronze.ecb_exchange_rates_latest` view exposes the newest rate per currency, keeping the legacy name `ducklake.bronze.ecb_exchange_rates` aliased to the latest view.
+* Silver model normalizes datatypes, enforces EUR base currency, deduplicates on `(rate_date, currency_code)`, and flags any missing rates or structural drift via dbt/SQLMesh tests (`not_null`, `relationships`, and a custom check ensuring ≥15 active currencies per load).
+* Gold model derives monthly and quarterly aggregates (e.g., average EUR→USD, min/max per currency) and exposes convenience columns for downstream BI/ML.
+* Comprehensive documentation in `docs/contracts/source_public.md`: endpoint URLs, query parameters, refresh cadence, schema, constraints, and sample queries illustrating how to locate historical snapshots vs. the latest view.
+* Automated coverage: pytest or integration test stubs that mock the ECB response, plus dbt/SQLMesh tests validating the bronze and silver outputs. Include the new ingestion target in the regression checklist (`make demo` or similar).
 
-  * Bronze: raw records.
-  * Silver: typed and deduplicated data.
-  * Gold: aggregated statistics (e.g., average EUR/USD per month or mean temperature by region).
-* Dataset documented in `docs/contracts/source_public.md` with URL, schema, and refresh frequency.
+### Feature 2.4 — Bronze Snapshot Archive & Latest View ✅
+
+**Goal:** Preserve every full-load snapshot in bronze while exposing a clean “latest records” view for downstream layers.
 
 **Acceptance Criteria**
 
-* `scripts/ingest_api.py` fetches and converts sample JSON → Parquet.
-* Output uploaded to `s3://lake/landing/api/...`.
-* Basic schema documented under `docs/contracts/source_api.md`.
+* File-based ingesters accept optional `--load-date` (YYYY-MM-DD) and `--batch-id` (defaults to current UTC timestamp) and write landing data to `s3://lake/landing/<dataset>/load_date=<date>/batch_id=<batch_id>/...`.
+* Bronze archive table `ducklake.bronze.seed_demo_archive` appends every ingest with both `load_date` and `load_batch` columns; no `CREATE OR REPLACE` statements that drop history.
+* View (or materialized table) `ducklake.bronze.seed_demo_latest` returns the most recent row per business key using `ORDER BY load_date DESC, load_batch DESC`, backing existing silver models.
+* README documents how to run ingest scripts with fixed `--load-date`/`--batch-id` values for deterministic development/testing and explains the partition hierarchy.
+* Contract/docs updated to mention archive vs. latest semantics and where historical snapshots live.
+
+### Feature 2.5 — Schema-Aware Storage Prefixes (Cancelled)
+
+**Goal:** Ensure DuckLake writes managed tables under schema-specific prefixes (e.g., `bronze/seed_demo/`) to make backup/recovery and browsing in MinIO intuitive.
+
+**Acceptance Criteria**
+
+* DuckLake ingest/bootstrap logic sets `ducklake_set_option('storage.table_prefix', '<schema>/')` (or equivalent) before creating tables so managed data lands under `s3://lake/ducklake/<schema>/<table>/...`.
+* README documents the configuration and how to verify the folder layout in MinIO.
+* Ingest scripts respect the prefix automatically; no manual steps required.
+* Existing tables are migrated or re-ingested so bronze data appears under the new schema-prefixed path.
+
+### Feature 2.6 — Catalog Backup Manifests ✅
+
+**Goal:** Produce human-readable and restorable snapshots of DuckLake metadata alongside parquet data to simplify disaster recovery.
+
+**Acceptance Criteria**
+
+* Add a command (e.g., `make backup_catalog`) that exports the DuckLake catalog (SQLite) and a JSON/CSV manifest of schemas, tables, snapshots, and storage locations to `s3://lake/ducklake/_catalog_backups/<timestamp>/`.
+* Document how to restore from the backup (copy catalog DB + ensure parquet paths exist) and reference it in README.
+* CI or local checklist updated to remind contributors to run the backup command before major changes/releases.
+* Contracts/docs mention where catalog backups are stored and how long they are retained.
 
 ---
 

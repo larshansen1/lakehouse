@@ -1,0 +1,23 @@
+[
+  {
+    "postId": 1,
+    "id": 1,
+    "name": "demo comment: ingestion feedback",
+    "email": "demo@example.com",
+    "body": "Great job wiring the seed ingestion!"
+  },
+  {
+    "postId": 1,
+    "id": 2,
+    "name": "demo comment: audit reminder",
+    "email": "review@example.com",
+    "body": "Remember to review the audit counts after each run."
+  },
+  {
+    "postId": 2,
+    "id": 3,
+    "name": "demo comment: transform note",
+    "email": "transform@example.com",
+    "body": "Silver layer should normalize casing for customer names."
+  }
+]
